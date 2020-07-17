@@ -1,17 +1,72 @@
-import React from 'react';
-import ReactDOM from 'react-dom';
-import './index.css';
-import App from './App';
-import * as serviceWorker from './serviceWorker';
+import React from "react";
+import ReactDOM from "react-dom";
+import * as serviceWorker from "./serviceWorker";
+import {
+	BrowserRouter as Router,
+	Switch,
+	Route,
+	withRouter,
+} from "react-router-dom";
+import { createStore } from "redux";
+import { Provider, connect } from "react-redux";
+import { composeWithDevTools } from "redux-devtools-extension";
 
-ReactDOM.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-  document.getElementById('root')
+import "semantic-ui-css/semantic.min.css";
+import App from "./components/App";
+import Login from "./components/Auth/Login";
+import Register from "./components/Auth/Register";
+import Spinner from "./Spinner";
+import firebase from "./firebaseConfig";
+
+import rootReducer from "./reducers/index";
+import { setUser, clearUser } from "./actions/index";
+
+const store = createStore(rootReducer, composeWithDevTools());
+
+class Root extends React.Component {
+	componentDidMount() {
+		console.log(this.props.isLoading);
+		firebase.auth().onAuthStateChanged((user) => {
+			if (user) {
+				this.props.setUser(user);
+				this.props.history.push("/");
+			} else {
+				this.props.clearUser();
+				this.props.history.push("/login");
+			}
+		});
+	}
+
+	render() {
+		return this.props.isLoading ? (
+			<Spinner></Spinner>
+		) : (
+			<React.StrictMode>
+				<Switch>
+					<Route path="/" exact component={App}></Route>
+					<Route path="/login" component={Login}></Route>
+					<Route path="/register" component={Register}></Route>
+				</Switch>
+			</React.StrictMode>
+		);
+	}
+}
+
+const mapStateToProps = (state) => ({
+	isLoading: state.user.isLoading,
+});
+
+const RootWithAuth = withRouter(
+	connect(mapStateToProps, { setUser, clearUser })(Root)
 );
 
-// If you want your app to work offline and load faster, you can change
-// unregister() to register() below. Note this comes with some pitfalls.
-// Learn more about service workers: https://bit.ly/CRA-PWA
+ReactDOM.render(
+	<Provider store={store}>
+		<Router>
+			<RootWithAuth></RootWithAuth>
+		</Router>
+	</Provider>,
+	document.getElementById("root")
+);
+
 serviceWorker.unregister();
