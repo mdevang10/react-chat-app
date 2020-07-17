@@ -9,6 +9,7 @@ import MessagesHeader from "./MessagesHeader";
 import MessageForm from "./MessageForm";
 import Message from "./Message";
 import Typing from "./Typing";
+import Skeleton from "./Skeleton";
 
 class Messages extends Component {
 	state = {
@@ -29,15 +30,54 @@ class Messages extends Component {
 		typingRef: firebase.database().ref("typing"),
 		typingUsers: [],
 		connectedRef: firebase.database().ref(".info/connected"),
+		listeners: [],
 	};
 
 	componentDidMount() {
-		const { channel, user } = this.state;
+		const { channel, user, listeners } = this.state;
 		if (channel && user) {
+			this.removeListners(listeners);
 			this.addListeners(channel.id);
 			this.addUsersStarsListeners(channel.id, user.uid);
 		}
 	}
+
+	componentDidUpdate(prevProps, prevState) {
+		if (this.MessagesEnd) {
+			this.scrollToBottom();
+		}
+	}
+
+	componentWillUnmount() {
+		this.removeListners(this.state.listeners);
+		this.state.connectedRef.off()
+	}
+
+	scrollToBottom = () => {
+		this.MessagesEnd.scrollIntoView({ behavior: "smooth" });
+	};
+
+	removeListners = (listeners) => {
+		listeners.forEach((listner) => {
+			listner.ref.child(listner.id).off(listner.event);
+		});
+	};
+
+	addToListners = (id, ref, event) => {
+		const index = this.state.listeners.findIndex((listner) => {
+			return (
+				listner.id === id &&
+				listner.ref === ref &&
+				listner.event === event
+			);
+		});
+		if (index !== -1) {
+			const newListener = { id, ref, event };
+			this.setState({
+				listeners: this.state.listeners.concat(newListener),
+			});
+		}
+	};
 
 	addListeners = (channelId) => {
 		this.addMessageListner(channelId);
@@ -56,6 +96,7 @@ class Messages extends Component {
 			this.countUniqueUsers(loadedMessages);
 			this.countUserPosts(loadedMessages);
 		});
+		this.addToListners(channelId, ref, "child_added");
 	};
 
 	addTypingListners = (channelId) => {
@@ -71,6 +112,7 @@ class Messages extends Component {
 				});
 			}
 		});
+		this.addToListners(channelId, this.state.typingRef, "child_added");
 
 		this.state.typingRef.child(channelId).on("child_removed", (snap) => {
 			const index = typingUsers.findIndex((user) => user.id === snap.key);
@@ -83,6 +125,7 @@ class Messages extends Component {
 				});
 			}
 		});
+		this.addToListners(channelId, this.state.typingRef, "child_removed");
 
 		this.state.connectedRef.on("value", (snap) => {
 			if (snap.val() === true) {
@@ -115,6 +158,15 @@ class Messages extends Component {
 			});
 	};
 
+	displayMessagesSkeleton = (loading) =>
+		loading ? (
+			<React.Fragment>
+				{[...Array(10)].map((_, i) => (
+					<Skeleton key={i}></Skeleton>
+				))}
+			</React.Fragment>
+		) : null;
+
 	displayMessages = (messages) => {
 		return (
 			messages.length > 0 &&
@@ -128,22 +180,21 @@ class Messages extends Component {
 		);
 	};
 
-	displayTypingUsers = (users) => {
+	displayTypingUsers = (users) =>
 		users.length > 0 &&
-			users.map((user) => (
-				<div
-					style={{
-						display: "flex",
-						alignItems: "center",
-						marginBottom: "0.2em",
-					}}
-					key={user.id}
-				>
-					<span className="user__typing">${user.name} is Typing</span>
-					<Typing></Typing>
-				</div>
-			));
-	};
+		users.map((user) => (
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					marginBottom: "0.2em",
+				}}
+				key={user.id}
+			>
+				<span className="user__typing">{user.name} is typing</span>{" "}
+				<Typing />
+			</div>
+		));
 
 	isProgressBarVisible = (percent) => {
 		if (percent > 0) {
@@ -268,6 +319,7 @@ class Messages extends Component {
 			privateChannel,
 			isChannelStarred,
 			typingUsers,
+			messagesLoading,
 		} = this.state;
 		return (
 			<>
@@ -286,10 +338,12 @@ class Messages extends Component {
 							progressBar ? "messages__progress" : "messages"
 						}
 					>
+						{this.displayMessagesSkeleton(messagesLoading)}
 						{searchTerm
 							? this.displayMessages(searchResults)
 							: this.displayMessages(messages)}
 						{this.displayTypingUsers(typingUsers)}
+						<div ref={(node) => (this.MessagesEnd = node)}></div>
 					</Comment.Group>
 				</Segment>
 				<MessageForm
