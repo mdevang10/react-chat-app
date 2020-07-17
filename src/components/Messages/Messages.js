@@ -8,6 +8,7 @@ import firebase from "../../firebaseConfig";
 import MessagesHeader from "./MessagesHeader";
 import MessageForm from "./MessageForm";
 import Message from "./Message";
+import Typing from "./Typing";
 
 class Messages extends Component {
 	state = {
@@ -25,6 +26,9 @@ class Messages extends Component {
 		searchLoading: false,
 		messagesLoading: true,
 		progressBar: false,
+		typingRef: firebase.database().ref("typing"),
+		typingUsers: [],
+		connectedRef: firebase.database().ref(".info/connected"),
 	};
 
 	componentDidMount() {
@@ -37,6 +41,7 @@ class Messages extends Component {
 
 	addListeners = (channelId) => {
 		this.addMessageListner(channelId);
+		this.addTypingListners(channelId);
 	};
 
 	addMessageListner = (channelId) => {
@@ -50,6 +55,47 @@ class Messages extends Component {
 			});
 			this.countUniqueUsers(loadedMessages);
 			this.countUserPosts(loadedMessages);
+		});
+	};
+
+	addTypingListners = (channelId) => {
+		let typingUsers = [];
+		this.state.typingRef.child(channelId).on("child_added", (snap) => {
+			if (snap.key !== this.state.user.uid) {
+				typingUsers = typingUsers.concat({
+					id: snap.key,
+					name: snap.val(),
+				});
+				this.setState({
+					typingUsers: typingUsers,
+				});
+			}
+		});
+
+		this.state.typingRef.child(channelId).on("child_removed", (snap) => {
+			const index = typingUsers.findIndex((user) => user.id === snap.key);
+			if (index !== -1) {
+				typingUsers = typingUsers.filter(
+					(user) => user.id !== snap.key
+				);
+				this.setState({
+					typingUsers: typingUsers,
+				});
+			}
+		});
+
+		this.state.connectedRef.on("value", (snap) => {
+			if (snap.val() === true) {
+				this.state.typingRef
+					.child(channelId)
+					.child(this.state.user.uid)
+					.onDisconnect()
+					.remove((err) => {
+						if (err !== null) {
+							console.log(err);
+						}
+					});
+			}
 		});
 	};
 
@@ -80,6 +126,23 @@ class Messages extends Component {
 				></Message>
 			))
 		);
+	};
+
+	displayTypingUsers = (users) => {
+		users.length > 0 &&
+			users.map((user) => (
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						marginBottom: "0.2em",
+					}}
+					key={user.id}
+				>
+					<span className="user__typing">${user.name} is Typing</span>
+					<Typing></Typing>
+				</div>
+			));
 	};
 
 	isProgressBarVisible = (percent) => {
@@ -122,7 +185,6 @@ class Messages extends Component {
 			}
 			return acc;
 		}, {});
-		console.log(userPosts);
 		this.props.setUserPosts(userPosts);
 	};
 
@@ -205,6 +267,7 @@ class Messages extends Component {
 			searchLoading,
 			privateChannel,
 			isChannelStarred,
+			typingUsers,
 		} = this.state;
 		return (
 			<>
@@ -226,6 +289,7 @@ class Messages extends Component {
 						{searchTerm
 							? this.displayMessages(searchResults)
 							: this.displayMessages(messages)}
+						{this.displayTypingUsers(typingUsers)}
 					</Comment.Group>
 				</Segment>
 				<MessageForm
